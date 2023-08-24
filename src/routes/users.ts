@@ -1,48 +1,50 @@
 import { FastifyInstance } from 'fastify'
-import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { knex } from '../database'
-import { validateUserSchema } from '../schemas/user-schema'
+import { validateCreateUserSchema } from '../middlewares/schemas/user-schema'
+import { checkUserIdExists } from '../middlewares/check-user-id-exists'
 
 export const usersRoutes = async (app: FastifyInstance) => {
-  app.get('/:id', async (req, res) => {
-    const userParamsSchema = z.object({
-      id: z.string().uuid(),
-    })
+  app.get(
+    '/',
+    {
+      preHandler: [checkUserIdExists],
+    },
+    async (req, res) => {
+      const id = req.cookies.user_id
 
-    const result = userParamsSchema.safeParse(req.params)
+      const user = await knex('users').where('id', id).first().select('*')
 
-    if (!result.success) {
-      return res.status(400).send({ error: result.error.issues })
-    }
-
-    const { id } = result.data
-
-    const user = await knex('users').where('id', id).first()
-
-    return { user }
-  })
+      return res.send({ user })
+    },
+  )
 
   app.post('/', async (req, res) => {
-    const result = validateUserSchema(req)
+    const result = validateCreateUserSchema(req)
 
     if (!result.success) {
       return res.status(400).send({ error: result.error.issues })
     }
 
+    const id = randomUUID()
     const { name, dietGoal, email, password } = result.data
 
+    res.cookie('user_id', id, {
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    })
+
     try {
-      const returned = await knex('users').returning('id').insert({
-        id: randomUUID(),
+      await knex('users').insert({
+        id,
         name,
         diet_goal: dietGoal,
         email,
         password,
       })
-      return res.status(201).send({ user: returned[0] })
+
+      return res.status(201).send()
     } catch (error) {
-      return res.status(400).send(error)
+      return res.status(500).send({ error })
     }
   })
 }

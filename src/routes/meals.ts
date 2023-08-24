@@ -1,70 +1,197 @@
 import { FastifyInstance } from 'fastify'
 import { knex } from '../database'
-import { z } from 'zod'
-import { validateMealSchema } from '../schemas/meals-schema'
+import {
+  validateMealSchema,
+  validateMealIdParamSchema,
+  validateUpdateMealSchema,
+} from '../middlewares/schemas/meals-schema'
 import { randomUUID } from 'crypto'
+import { checkUserIdExists } from '../middlewares/check-user-id-exists'
 
 export const mealsRoutes = async (app: FastifyInstance) => {
-  app.post('/', async (req, res) => {
-    const result = validateMealSchema(req)
+  app.post(
+    '/',
+    {
+      preHandler: [checkUserIdExists],
+    },
+    async (req, res) => {
+      const result = validateMealSchema(req)
 
-    if (!result.success) {
-      return res.status(400).send({ error: result.error.issues })
-    }
+      if (!result.success) {
+        return res.status(400).send({ error: result.error.issues })
+      }
 
-    const {
-      user_id: userId,
-      name,
-      description,
-      schedule_at: scheduleAt,
-      on_diet: onDiet,
-    } = result.data
+      const {
+        name,
+        description,
+        schedule_at: scheduleAt,
+        on_diet: onDiet,
+      } = result.data
 
-    const returned = await knex('meals').returning('id').insert({
-      id: randomUUID(),
-      user_id: userId,
-      name,
-      description,
-      schedule_at: scheduleAt,
-      on_diet: onDiet,
-    })
+      const userId = req.cookies.user_id
 
-    res.status(201).send({ meal: returned[0] })
-  })
+      const returned = await knex('meals').returning('id').insert({
+        id: randomUUID(),
+        user_id: userId,
+        name,
+        description,
+        schedule_at: scheduleAt,
+        on_diet: onDiet,
+      })
 
-  app.get('/:id', async (req, res) => {
-    const mealParamsSchema = z.object({
-      id: z.string().uuid(),
-    })
+      res.status(201).send({ meal: returned[0] })
+    },
+  )
 
-    const result = mealParamsSchema.safeParse(req.params)
+  app.get(
+    '/:meal_id',
+    {
+      preHandler: [checkUserIdExists],
+    },
+    async (req, res) => {
+      const result = validateMealIdParamSchema(req)
 
-    if (!result.success) {
-      return res.status(400).send({ error: result.error.issues })
-    }
+      if (!result.success) {
+        return res.status(400).send({ error: result.error.issues })
+      }
 
-    const { id } = result.data
+      const { meal_id: id } = result.data
 
-    const meal = await knex('meals').where('id', id).first()
+      const userId = req.cookies.user_id
 
-    return { meal }
-  })
+      try {
+        const meal = await knex('meals').where({ id, user_id: userId }).first()
 
-  app.get('/fromUser/:userid', async (req, res) => {
-    const mealParamsSchema = z.object({
-      userid: z.string().uuid(),
-    })
+        if (!meal) {
+          return res
+            .status(404)
+            .send({ error: `No meals with the given ID was found!` })
+        }
 
-    const result = mealParamsSchema.safeParse(req.params)
+        return res.send(meal)
+      } catch (error) {
+        return res.status(500).send({ error })
+      }
+    },
+  )
 
-    if (!result.success) {
-      return res.status(400).send({ error: result.error.issues })
-    }
+  app.get(
+    '/',
+    {
+      preHandler: [checkUserIdExists],
+    },
+    async (req, res) => {
+      const userId = req.cookies.user_id
 
-    const { userid: userId } = result.data
+      try {
+        const meals = await knex('meals').where('user_id', userId)
 
-    const meals = await knex('meals').where('user_id', userId)
+        return res.send({ meals })
+      } catch (error) {
+        return res.status(500).send({ error })
+      }
+    },
+  )
 
-    return { meals }
-  })
+  app.put(
+    '/:meal_id',
+    {
+      preHandler: [checkUserIdExists],
+    },
+    async (req, res) => {
+      const result = validateMealIdParamSchema(req)
+
+      if (!result.success) {
+        return res.status(400).send({ error: result.error.issues })
+      }
+
+      const { meal_id: id } = result.data
+
+      const userId = req.cookies.user_id
+
+      let searchedMeal
+      try {
+        searchedMeal = await knex('meals')
+          .where({ id, user_id: userId })
+          .first()
+      } catch (error) {
+        return res.status(500).send({ error })
+      }
+
+      if (!searchedMeal) {
+        return res
+          .status(404)
+          .send({ error: `No meals with the given ID was found!` })
+      }
+
+      const updateSchemaResult = validateUpdateMealSchema(req)
+
+      if (!updateSchemaResult.success) {
+        return res.status(400).send({ error: updateSchemaResult.error.issues })
+      }
+
+      const {
+        name,
+        description,
+        schedule_at: scheduleAt,
+        on_diet: onDiet,
+      } = updateSchemaResult.data
+
+      try {
+        const affectedRows = await knex('meals')
+          .update({
+            name: name ?? searchedMeal.name,
+            description: description ?? searchedMeal.description,
+            schedule_at: scheduleAt ?? searchedMeal.schedule_at,
+            on_diet: onDiet ?? searchedMeal.on_diet,
+            updated_at: new Date(),
+          })
+          .where({ id, user_id: userId })
+
+        if (!affectedRows) {
+          return res
+            .status(404)
+            .send({ error: `No meals with the given ID was found!` })
+        }
+
+        return res.status(204).send()
+      } catch (error) {
+        return res.status(500).send({ error })
+      }
+    },
+  )
+
+  app.delete(
+    '/:meal_id',
+    {
+      preHandler: [checkUserIdExists],
+    },
+    async (req, res) => {
+      const result = validateMealIdParamSchema(req)
+
+      if (!result.success) {
+        return res.status(400).send({ error: result.error.issues })
+      }
+
+      const { meal_id: id } = result.data
+
+      const userId = req.cookies.user_id
+
+      try {
+        const affectedRows = await knex('meals')
+          .where({ id, user_id: userId })
+          .del()
+
+        if (!affectedRows) {
+          return res
+            .status(404)
+            .send({ error: `No meals with the given ID was found!` })
+        }
+
+        return res.status(204).send()
+      } catch (error) {
+        return res.status(500).send({ error })
+      }
+    },
+  )
 }
