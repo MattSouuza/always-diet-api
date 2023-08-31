@@ -93,6 +93,70 @@ export const mealsRoutes = async (app: FastifyInstance) => {
     },
   )
 
+  app.get(
+    '/reports/all',
+    {
+      preHandler: [checkUserIdExists],
+    },
+    async (req, res) => {
+      let mealsCount = 0
+
+      const userId = req.cookies.user_id
+
+      try {
+        mealsCount = await knex('meals').where('user_id', userId).count()
+      } catch (error) {
+        return res.status(500).send({ error })
+      }
+
+      res.send({ mealsCount })
+    },
+  )
+
+  app.get(
+    '/reports/on_diet',
+    {
+      preHandler: [checkUserIdExists],
+    },
+    async (req, res) => {
+      let mealsCount = 0
+
+      const userId = req.cookies.user_id
+
+      try {
+        mealsCount = await knex('meals')
+          .where({ user_id: userId, on_diet: true })
+          .count()
+      } catch (error) {
+        return res.status(500).send({ error })
+      }
+
+      res.send({ mealsCount })
+    },
+  )
+
+  app.get(
+    '/reports/out_of_diet',
+    {
+      preHandler: [checkUserIdExists],
+    },
+    async (req, res) => {
+      let mealsCount = 0
+
+      const userId = req.cookies.user_id
+
+      try {
+        mealsCount = await knex('meals')
+          .where({ user_id: userId, on_diet: false })
+          .count()
+      } catch (error) {
+        return res.status(500).send({ error })
+      }
+
+      res.send({ mealsCount })
+    },
+  )
+
   app.put(
     '/:meal_id',
     {
