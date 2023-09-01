@@ -157,6 +157,44 @@ export const mealsRoutes = async (app: FastifyInstance) => {
     },
   )
 
+  app.get(
+    '/reports/best_strick',
+    {
+      preHandler: [checkUserIdExists],
+    },
+    async (req, res) => {
+      let meals = []
+
+      const userId = req.cookies.user_id
+
+      try {
+        meals = await knex('meals')
+          .where({ user_id: userId, on_diet: false })
+          .select()
+      } catch (error) {
+        return res.status(500).send({ error })
+      }
+
+      const sequences = []
+
+      for (let i = 0; i < meals.length; i++) {
+        if (!i) {
+          continue
+        }
+
+        if (
+          meals[i].schedule_at.getDate() -
+            meals[i - 1].schedule_at.getDate() ===
+          1
+        ) {
+          
+        }
+      }
+
+      res.send({ meals })
+    },
+  )
+
   app.put(
     '/:meal_id',
     {
