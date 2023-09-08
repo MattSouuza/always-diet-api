@@ -1,13 +1,13 @@
 import { FastifyInstance } from 'fastify'
 import { knex } from '../database'
+import { randomUUID } from 'crypto'
 import {
   validateMealSchema,
   validateMealIdParamSchema,
   validateUpdateMealSchema,
 } from '../middlewares/schemas/meals-schema'
-import { randomUUID } from 'crypto'
 import { checkUserIdExists } from '../middlewares/check-user-id-exists'
-import { MealsSequences } from '../@types/meal'
+import { getMealsSequence } from '../services/meals'
 
 export const mealsRoutes = async (app: FastifyInstance) => {
   app.post(
@@ -182,69 +182,12 @@ export const mealsRoutes = async (app: FastifyInstance) => {
           .send({ message: 'Not enought meals registered!' })
       }
 
-      const sequences: MealsSequences[] = []
+      const bestStrick = getMealsSequence(meals)
 
-      console.log('__________________________')
-
-      for (let i = 0; i < meals.length; i++) {
-        const currentMeal = meals[i]
-        const nextMeal = meals[i + 1]
-
-        if (!nextMeal) {
-          continue
-        }
-
-        if (!currentMeal.on_diet || !nextMeal.on_diet) {
-          continue
-        }
-
-        console.log(i, new Date(currentMeal.schedule_at))
-
-        const currentMealDate = new Date(
-          new Date(currentMeal.schedule_at).setHours(0, 0, 0, 0),
-        )
-        const nextMealDate = new Date(
-          new Date(nextMeal.schedule_at).setHours(0, 0, 0, 0),
-        )
-
-        const differenceMealDates =
-          nextMealDate.getDate() - currentMealDate.getDate()
-
-        console.log('current', currentMealDate)
-        console.log('next', nextMealDate)
-        console.log(differenceMealDates)
-
-        if (differenceMealDates > 1 || differenceMealDates < 0) {
-          continue
-        }
-
-        let currentMealExistInArray = false
-
-        sequences.forEach((sequence, iSequence) =>
-          sequence.forEach((meal) => {
-            if (meal.id === currentMeal.id) {
-              currentMealExistInArray = true
-              sequences[iSequence].push(nextMeal)
-            }
-          }),
-        )
-
-        if (!currentMealExistInArray) {
-          sequences.push([currentMeal, nextMeal])
-        }
-      }
-
-      console.log('__________________________')
-
-      let bestStrick: MealsSequences = []
-
-      sequences.forEach((sequence) => {
-        if (sequence.length > bestStrick.length) {
-          bestStrick = sequence
-        }
+      res.send({
+        best_strick: bestStrick,
+        amount: bestStrick.length,
       })
-
-      res.send({ best_strick: bestStrick })
     },
   )
 
